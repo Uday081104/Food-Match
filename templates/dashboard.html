@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Surplus Food Matcher — Test Dashboard</title>
+<style>
+  :root {
+    --green: #2e7d32;
+    --bg: #f7f7f5;
+    --card: #ffffff;
+    --border: #e0e0e0;
+    --text: #222;
+    --muted: #777;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 24px;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 24px; font-size: 14px; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .card h2 {
+    font-size: 15px;
+    margin: 0 0 12px 0;
+    color: var(--green);
+  }
+  label { display: block; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  input, select {
+    width: 100%;
+    padding: 7px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    margin-top: 2px;
+  }
+  button {
+    margin-top: 12px;
+    background: var(--green);
+    color: white;
+    border: none;
+    padding: 9px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { background: #256428; }
+  button.secondary { background: #555; }
+  .list-item {
+    border-bottom: 1px solid var(--border);
+    padding: 8px 0;
+    font-size: 13px;
+  }
+  .list-item:last-child { border-bottom: none; }
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #eef5ee;
+    color: var(--green);
+    margin-right: 4px;
+  }
+  .tag.claimed { background: #fdecea; color: #c62828; }
+  pre {
+    background: #111;
+    color: #d4f7d4;
+    font-size: 12px;
+    padding: 10px;
+    border-radius: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+  .full-width { grid-column: 1 / -1; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+</style>
+</head>
+<body>
+
+<h1>🍲 Surplus Food Matcher — Test Dashboard</h1>
+<div class="subtitle">Simulates the whole donor → NGO → claim flow without needing WhatsApp API keys yet.</div>
+
+<div class="grid">
+
+  <!-- Register Donor -->
+  <div class="card">
+    <h2>1. Register a Donor (restaurant/household)</h2>
+    <label>Name</label>
+    <input id="donor-name" placeholder="e.g. Anna's Kitchen">
+    <label>Phone (unique, e.g. +9198xxxxxx1)</label>
+    <input id="donor-phone" placeholder="+9198xxxxxx1">
+    <label>Pincode</label>
+    <input id="donor-pincode" placeholder="e.g. 400001">
+    <button onclick="registerDonor()">Register Donor</button>
+    <div id="donor-list" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- Register NGO -->
+  <div class="card">
+    <h2>2. Register an NGO / Shelter</h2>
+    <label>Name</label>
+    <input id="ngo-name" placeholder="e.g. Hope Shelter Home">
+    <label>Phone (unique)</label>
+    <input id="ngo-phone" placeholder="+9198xxxxxx2">
+    <label>Pincode</label>
+    <input id="ngo-pincode" placeholder="e.g. 400001">
+    <button onclick="registerNgo()">Register NGO</button>
+    <div id="ngo-list" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- Post Offer -->
+  <div class="card full-width">
+    <h2>3. Post a Donation (admin/testing — in real use, donors do this via WhatsApp)</h2>
+    <div class="row">
+      <div>
+        <label>Donor</label>
+        <select id="offer-donor"></select>
+      </div>
+      <div>
+        <label>Category</label>
+        <select id="offer-category">
+          <option>Food</option>
+          <option>Clothes</option>
+          <option>Books</option>
+          <option>Electronics</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div>
+        <label>Description</label>
+        <input id="offer-description" placeholder="e.g. 20 veg meals / 3 bags kids clothes">
+      </div>
+      <div>
+        <label>Pickup location</label>
+        <input id="offer-location" placeholder="e.g. Shop 4, MG Road">
+      </div>
+    </div>
+    <button onclick="postOffer()">Post Donation & Broadcast to NGOs</button>
+    <div id="broadcast-result" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- Live Offers -->
+  <div class="card">
+    <h2>4. Live Offers</h2>
+    <div id="offer-list"></div>
+    <button class="secondary" onclick="loadOffers()">Refresh</button>
+  </div>
+
+  <!-- Message log -->
+  <div class="card">
+    <h2>WhatsApp Message Log (simulated)</h2>
+    <pre id="message-log">Loading...</pre>
+    <button class="secondary" onclick="loadMessages()">Refresh</button>
+  </div>
+
+</div>
+
+<script>
+async function registerDonor() {
+  const body = {
+    name: document.getElementById('donor-name').value,
+    phone: document.getElementById('donor-phone').value,
+    pincode: document.getElementById('donor-pincode').value,
+  };
+  await fetch('/api/donors', {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  loadDonors();
+}
+
+async function registerNgo() {
+  const body = {
+    name: document.getElementById('ngo-name').value,
+    phone: document.getElementById('ngo-phone').value,
+    pincode: document.getElementById('ngo-pincode').value,
+  };
+  await fetch('/api/ngos', {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  loadNgos();
+}
+
+async function loadDonors() {
+  const res = await fetch('/api/donors');
+  const donors = await res.json();
+  document.getElementById('donor-list').innerHTML = donors.map(d =>
+    `<div class="list-item"><b>${d.name}</b> — ${d.phone} (${d.pincode})</div>`).join('');
+  const select = document.getElementById('offer-donor');
+  select.innerHTML = donors.map(d => `<option value="${d.id}">${d.name} (${d.pincode})</option>`).join('');
+}
+
+async function loadNgos() {
+  const res = await fetch('/api/ngos');
+  const ngos = await res.json();
+  document.getElementById('ngo-list').innerHTML = ngos.map(n =>
+    `<div class="list-item"><b>${n.name}</b> — ${n.phone} (${n.pincode})
+     <span class="tag">${n.is_available ? 'available' : 'unavailable'}</span></div>`).join('');
+}
+
+async function postOffer() {
+  const body = {
+    donor_id: document.getElementById('offer-donor').value,
+    category: document.getElementById('offer-category').value,
+    description: document.getElementById('offer-description').value,
+    pickup_location: document.getElementById('offer-location').value,
+    hours_until_pickup: 4
+  };
+  const res = await fetch('/api/offers', {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const data = await res.json();
+  if (data.broadcast_to.length === 0) {
+    document.getElementById('broadcast-result').innerHTML =
+      `<i>No available NGOs matched this pincode. Register an NGO with the same pincode to test matching.</i>`;
+  } else {
+    document.getElementById('broadcast-result').innerHTML =
+      `<b>Broadcast sent to ${data.broadcast_to.length} NGO(s):</b>` +
+      data.broadcast_to.map(b => `<div class="list-item">📲 ${b.ngo} (${b.phone})</div>`).join('');
+  }
+  loadOffers();
+  loadMessages();
+}
+
+async function loadOffers() {
+  const res = await fetch('/api/offers');
+  const offers = await res.json();
+  document.getElementById('offer-list').innerHTML = offers.map(o => `
+    <div class="list-item">
+      #${o.id} — ${o.donor_name} — <b>${o.category}</b>: ${o.description}
+      <span class="tag ${o.status === 'claimed' ? 'claimed' : ''}">${o.status}</span>
+      ${o.photo_path ? `<div><img src="/uploads/${o.photo_path.split('/').pop()}" style="max-width:120px; border-radius:6px; margin-top:6px;"></div>` : ''}
+      <div style="margin-top:4px;">
+        <select id="claim-ngo-${o.id}" style="width:auto; display:inline-block;"></select>
+        <button style="margin-top:0; padding:5px 8px;" onclick="claimOffer(${o.id})">Simulate CONFIRM</button>
+      </div>
+    </div>
+  `).join('');
+
+  const ngoRes = await fetch('/api/ngos');
+  const ngos = await ngoRes.json();
+  offers.forEach(o => {
+    const sel = document.getElementById(`claim-ngo-${o.id}`);
+    if (sel) sel.innerHTML = ngos.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
+  });
+}
+
+async function claimOffer(offerId) {
+  const ngoId = document.getElementById(`claim-ngo-${offerId}`).value;
+  const res = await fetch(`/api/offers/${offerId}/claim`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ngo_id: ngoId})
+  });
+  const data = await res.json();
+  alert(data.message);
+  loadOffers();
+}
+
+async function loadMessages() {
+  const res = await fetch('/api/messages');
+  const msgs = await res.json();
+  document.getElementById('message-log').textContent = msgs.map(m =>
+    `[${m.direction.toUpperCase()}] ${m.phone}: ${m.body}`).join('\n\n') || 'No messages yet.';
+}
+
+// initial load
+loadDonors();
+loadNgos();
+loadOffers();
+loadMessages();
+</script>
+
+</body>
+</html>
